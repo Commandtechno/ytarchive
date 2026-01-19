@@ -1001,7 +1001,6 @@ func (di *DownloadInfo) downloadFragment(state *fragThreadState, dataChan chan<-
 		baseUrl := di.GetDownloadUrl(state.DataType)
 		seqUrl := fmt.Sprintf(baseUrl, state.SeqNum)
 
-		fmt.Println(seqUrl)
 		req, err := http.NewRequest("GET", seqUrl, nil)
 		if err != nil {
 			LogDebug("%s: error creating request: %s", state.Name, err.Error())
