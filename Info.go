@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"os/exec"
 	"strconv"
 	"strings"
 	"sync"
@@ -238,13 +239,13 @@ func NewFormatInfo() FormatInfo {
 		"channel":      "",
 		"upload_date":  "",
 		"start_date":   "",
-		"year":   "",
-		"month":   "",
-		"day":   "",
+		"year":         "",
+		"month":        "",
+		"day":          "",
 		"start_time":   "",
-		"hours":   "",
-		"minutes":   "",
-		"seconds":   "",
+		"hours":        "",
+		"minutes":      "",
+		"seconds":      "",
 		"publish_date": "",
 		"description":  "",
 		"url":          "",
@@ -710,45 +711,55 @@ desktop player response.
 */
 func (di *DownloadInfo) GetDownloadUrls(pr *PlayerResponse) map[int]string {
 	urls := make(map[int]string)
-	WebPlayerResponse, err := di.DownloadWebAPIPlayerResponse()
+	// WebPlayerResponse, err := di.DownloadWebAPIPlayerResponse()
 
+	mpdUrlsRaw, err := exec.Command("yt-dlp", "--get-url", "--live-from-start", "https://youtube.com/watch?v="+pr.VideoDetails.VideoID).Output()
 	if err != nil {
-		LogDebug("Error getting Web API player response: %s", err.Error())
-	} else {
-		if len(WebPlayerResponse.StreamingData.DashManifestURL) > 0 {
-			LogDebug("Retrieving URLs from Web API DASH manifest")
-			manifest := DownloadData(WebPlayerResponse.StreamingData.DashManifestURL)
-			if len(manifest) > 0 {
-				// we store the LastSq to calculate 5 days past
-				urls, di.LastSq = GetUrlsFromManifest(manifest, di.PoToken)
-			}
-
-			for itag := range urls {
-				LogTrace("Setting itag %d from Web API DASH manifest", itag)
-			}
-		}
+		panic(err)
 	}
 
-	if len(pr.StreamingData.DashManifestURL) > 0 {
-		LogDebug("Retrieving URLs from web page DASH manifest")
-		manifest := DownloadData(pr.StreamingData.DashManifestURL)
-		if len(manifest) > 0 {
-			// we store the LastSq to calculate 5 days past
-			dashUrls, lastSq := GetUrlsFromManifest(manifest, di.PoToken)
-			if lastSq > di.LastSq {
-				di.LastSq = lastSq
+	mpdUrl, _, _ := strings.Cut(string(mpdUrlsRaw), "\n")
+	if mpdUrl == "" {
+		panic(errors.New("no mpd url"))
+	}
+
+	// if err != nil {
+	// 	LogDebug("Error getting Web API player response: %s", err.Error())
+	// } else {
+	// 	if len(WebPlayerResponse.StreamingData.DashManifestURL) > 0 {
+	// 		LogDebug("Retrieving URLs from Web API DASH manifest")
+	// 		manifest := DownloadData(WebPlayerResponse.StreamingData.DashManifestURL)
+	// 		if len(manifest) > 0 {
+	// 			// we store the LastSq to calculate 5 days past
+	// 			urls, di.LastSq = GetUrlsFromManifest(manifest, di.PoToken)
+	// 		}
+
+	// 		for itag := range urls {
+	// 			LogTrace("Setting itag %d from Web API DASH manifest", itag)
+	// 		}
+	// 	}
+	// }
+
+	// if len(pr.StreamingData.DashManifestURL) > 0 {
+	LogDebug("Retrieving URLs from yt-dlp DASH manifest")
+	manifest := DownloadData(mpdUrl)
+	if len(manifest) > 0 {
+		// we store the LastSq to calculate 5 days past
+		dashUrls, lastSq := GetUrlsFromManifest(manifest, di.PoToken)
+		if lastSq > di.LastSq {
+			di.LastSq = lastSq
+		}
+
+		for itag, url := range dashUrls {
+			if _, ok := urls[itag]; ok { // format exists already
+				continue
 			}
 
-			for itag, url := range dashUrls {
-				if _, ok := urls[itag]; ok { // format exists already
-					continue
-				}
-
-				urls[itag] = url
-				LogTrace("Setting itag %d from web page DASH manifest", itag)
-			}
+			urls[itag] = url
+			LogTrace("Setting itag %d from yt-dlp DASH manifest", itag)
 		}
 	}
+	// }
 
 	return urls
 }
@@ -990,6 +1001,7 @@ func (di *DownloadInfo) downloadFragment(state *fragThreadState, dataChan chan<-
 		baseUrl := di.GetDownloadUrl(state.DataType)
 		seqUrl := fmt.Sprintf(baseUrl, state.SeqNum)
 
+		fmt.Println(seqUrl)
 		req, err := http.NewRequest("GET", seqUrl, nil)
 		if err != nil {
 			LogDebug("%s: error creating request: %s", state.Name, err.Error())
